@@ -1,16 +1,21 @@
 package com.sky.service.impl;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.toolkit.StringUtils;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.sky.constant.MessageConstant;
 import com.sky.constant.PasswordConstant;
 import com.sky.constant.StatusConstant;
 import com.sky.context.BaseContext;
 import com.sky.dto.EmployeeDTO;
 import com.sky.dto.EmployeeLoginDTO;
+import com.sky.dto.EmployeePageQueryDTO;
 import com.sky.entity.Employee;
 import com.sky.exception.AccountLockedException;
 import com.sky.exception.AccountNotFoundException;
 import com.sky.exception.PasswordErrorException;
 import com.sky.mapper.EmployeeMapper;
+import com.sky.result.PageResult;
 import com.sky.service.EmployeeService;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -19,6 +24,7 @@ import org.springframework.util.DigestUtils;
 import org.springframework.util.ObjectUtils;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Service
 public class EmployeeServiceImpl implements EmployeeService {
@@ -88,4 +94,75 @@ public class EmployeeServiceImpl implements EmployeeService {
         employeeMapper.insert(employee);
     }
 
+    @Override
+    public PageResult pageQurery(EmployeePageQueryDTO queryDTO) {
+        // 1. 创建分页对象
+        Page<Employee> page = new Page<>(queryDTO.getPage(), queryDTO.getPageSize());
+
+        // 2. 创建查询条件
+        LambdaQueryWrapper<Employee> queryWrapper = new LambdaQueryWrapper<>();
+
+        // 3. 添加动态查询条件
+        if (StringUtils.isNotBlank(queryDTO.getName())) {
+            queryWrapper.like(Employee::getName, queryDTO.getName());
+        }
+
+        // 4. 添加排序（可选）
+        queryWrapper.orderByDesc(Employee::getCreateTime);
+
+        // 5. 执行分页查询 - 使用 selectPage 而不是 selectList
+        Page<Employee> pageResult = employeeMapper.selectPage(page, queryWrapper);
+
+        // 6. 封装返回结果
+        return new PageResult(pageResult.getTotal(), pageResult.getRecords());
+    }
+
+    /**
+     * 启用/禁用员工账号
+     * @param status 状态（1-启用，0-禁用）
+     * @param id 员工ID
+     */
+    @Override
+    public void enable(Integer status, Long id) {
+//        // 1. 校验参数合法性
+//        if (id == null || status == null || (status != StatusConstant.ENABLE && status != StatusConstant.DISABLE)) {
+//            throw new IllegalArgumentException(MessageConstant.PARAMETER_INVALID);
+//        }
+
+        // 2. 创建员工对象并设置需要更新的字段
+        Employee employee = Employee.builder()
+                .status(status)
+                .id(id)
+                .updateTime(LocalDateTime.now())
+                .updateUser(BaseContext.getCurrentId())
+                .build();
+        // 3. 执行更新操作
+        int rows = employeeMapper.updateById(employee);
+        if (rows == 0) {
+            throw new AccountNotFoundException(MessageConstant.ACCOUNT_NOT_FOUND);
+        }
+    }
+
+    @Override
+    public Employee getEmpById(Long id) {
+        return employeeMapper.selectById(id);
+    }
+
+    @Override
+    public void update(EmployeeDTO employeeDTO) {
+        Employee employee = new Employee();
+        BeanUtils.copyProperties(employeeDTO, employee);
+
+        // 设置更新时间为当前时间
+        employee.setUpdateTime(LocalDateTime.now());
+        // 设置更新人为当前登录用户ID（从上下文获取）
+        employee.setUpdateUser(BaseContext.getCurrentId());
+
+        // 调用MyBatis-Plus的updateById方法执行更新
+        int rows = employeeMapper.updateById(employee);
+        if (rows == 0) {
+            // 如果更新行数为0，说明员工ID不存在，抛出异常
+            throw new AccountNotFoundException(MessageConstant.ACCOUNT_NOT_FOUND);
+        }
+    }
 }
